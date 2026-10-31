@@ -328,6 +328,7 @@ h3 {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-soft);
+  text-wrap: balance;
 }
 
 .pill {
@@ -1356,10 +1357,12 @@ h3 {
   opacity: 0.75;
 }
 
+/* Quand les trios s'accumulent, ils passent sous le nom plutôt que de le réduire à une lettre. */
 .seat-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 2px 5px;
   min-width: 0;
   min-height: 22px;
 }
@@ -1371,8 +1374,8 @@ h3 {
 }
 
 .seat-name {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: min(4.5em, 100%);
   font-weight: 800;
   font-size: 0.82rem;
   overflow: hidden;
@@ -1382,6 +1385,7 @@ h3 {
 
 .seat-head .trio-chips {
   flex: none;
+  margin-left: auto;
 }
 
 .seat-hand {
@@ -1543,6 +1547,14 @@ h3 {
   align-items: center;
   gap: 3px;
 }
+/* L'étiquette « partenaire » mord sur le haut du siège : on y laisse de la place pour le nom et les trios. */
+.seat.is-partner {
+  padding-top: 13px;
+}
+.seat.is-partner .ask {
+  top: 37px;
+}
+
 .seat-partner {
   position: absolute;
   top: -10px;
