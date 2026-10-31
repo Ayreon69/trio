@@ -544,8 +544,17 @@ h3 {
   padding: 16px 16px 24px;
 }
 
-.all-games {
+.home-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   align-self: flex-start;
+  /* Au-dessus des lettres du logo, dont la boîte déborde vers le haut. */
+  position: relative;
+  z-index: 2;
+}
+.all-games {
   display: inline-flex;
   align-items: center;
   gap: 6px;
