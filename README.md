@@ -2,7 +2,7 @@
 
 **Plus petite ? Plus grande ? Retiens tout, et réunis trois cartes pareilles.**
 
-👉 **Jouer : (adresse à venir)** (la première ouverture peut prendre jusqu'à une minute, le temps que le serveur gratuit se réveille)
+👉 **Jouer : https://trio-k6b5.onrender.com** (la première ouverture peut prendre jusqu'à une minute, le temps que le serveur gratuit se réveille)
 
 Jeu de cartes multijoueur en ligne, à jouer entre amis depuis un navigateur, sur téléphone ou ordinateur, sans compte ni installation.
 D'après *Trio*, le jeu de Kaya Miyano édité par Cocktail Games (création de fans, non officielle, avec ses propres visuels).
