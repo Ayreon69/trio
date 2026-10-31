@@ -1,0 +1,11 @@
+{
+  "name": "Trio",
+  "short_name": "Trio",
+  "description": "Plus petite ? Plus grande ? Retiens tout et réunis trois cartes pareilles.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6efe2",
+  "theme_color": "#f6efe2",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
