@@ -45,7 +45,7 @@ Entre bots, une partie dure 25 à 30 tours ; un bot qui retient bat de 89 à 97 
 - Partie contre 2 à 5 bots en un clic
 - Un geste par carte : toucher « petite » ou « grande » sur le siège d'un joueur, une carte du centre, ou un bout de sa main ; ce qui est jouable s'illumine
 - Sur ordinateur, les joueurs sont assis en cercle autour du centre : toi en bas, le suivant à ta gauche, puis en face, puis à ta droite. Les cartes cachées du centre sont sur deux rangées
-- Une carte révélée se retourne sur place : au centre, ou posée devant le joueur à qui elle appartient. Une flèche dit ce qui a été demandé (vers le bas, turquoise : la plus petite ; vers le haut, rose : la plus grande), et le panneau du centre affiche en grand la demande en cours, sans historique. « Raté » ou « Trio ! » s'y tamponne
+- Une carte révélée se retourne sur place : au centre, ou posée devant le joueur à qui elle appartient (les tiennes entre ta main et le centre). Une flèche dit ce qui a été demandé (vers le bas, turquoise : la plus petite ; vers le haut, rose : la plus grande), et le panneau du centre affiche en grand la demande en cours, sans historique. « Raté » ou « Trio ! » s'y tamponne
 - Les cartes restent visibles 4,2 s après un raté et 3,4 s après un trio ; un bot laisse près de 2 s entre deux cartes d'un même tour
 - Les trios volent vers leur gagnant, confettis à la clé ; écran de victoire, puis la table dévoilée : toutes les mains, les trios et le centre
 - Équipes : couleurs, partenaire en face, échange secret en deux touches et rappel de ce qu'on a donné et reçu

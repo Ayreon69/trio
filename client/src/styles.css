@@ -2332,8 +2332,8 @@ h3 {
  */
 @media (min-width: 1000px) {
   .table-screen {
-    /* Ce que prennent l'en-tête, les places du haut, ta main et le panneau : le reste revient aux cartes du centre. */
-    --reserve: 560px;
+    /* Ce que prennent l'en-tête, les places du haut, tes cartes montrées, ta main et le panneau : le reste revient aux cartes du centre. */
+    --reserve: 626px;
     display: grid;
     max-width: 1500px;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr) minmax(0, 1fr);
@@ -2347,7 +2347,7 @@ h3 {
     row-gap: 12px;
   }
   .table-screen.no-top {
-    --reserve: 420px;
+    --reserve: 486px;
   }
   .table-top {
     grid-area: head;
@@ -2442,16 +2442,25 @@ h3 {
     max-width: 540px;
   }
 
-  /* Ta main au centre, tes cartes montrées posées à sa droite. */
-  .me-row {
-    padding-right: 150px;
+  /* Tes cartes montrées se posent devant toi, entre ta main et le centre (retour du 15/11/2026). */
+  .me-zone {
+    margin-top: 66px;
   }
   .front.is-mine {
-    --fw: 52px;
+    --fw: 48px;
     position: absolute;
-    left: auto;
+    left: 0;
     right: 0;
-    bottom: 22px;
+    bottom: calc(100% + 4px);
+    width: auto;
+    height: auto;
+    justify-content: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+  }
+  .front.is-mine .front-card + .front-card {
+    margin-left: 0;
   }
   .my-hand {
     --hw: clamp(60px, 6.2vw, 88px);
@@ -2464,11 +2473,27 @@ h3 {
     padding-bottom: 20px;
   }
   .table-screen {
-    --reserve: 520px;
+    --reserve: 570px;
     row-gap: 8px;
   }
+  .me-zone {
+    margin-top: 44px;
+  }
+  .front.is-mine {
+    --fw: 40px;
+    bottom: calc(100% - 2px);
+  }
+  .side {
+    gap: 8px;
+  }
+  .place > .seat {
+    padding: 5px 9px 4px;
+  }
+  .middle {
+    --slot-w: clamp(34px, calc((100dvh - var(--reserve)) / 2.9), 84px);
+  }
   .table-screen.no-top {
-    --reserve: 390px;
+    --reserve: 450px;
   }
 }
 
