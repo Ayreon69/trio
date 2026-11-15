@@ -26,9 +26,9 @@ const GRACE_MS = 20_000;
 /** Mode accéléré pour les tests locaux (TR_FAST=1) : bots et chronos quasi instantanés. */
 const FAST = process.env.TR_FAST === '1';
 const EVENT_MS = FAST ? 300 : 3_200;
-/** Le temps de bien voir les cartes avant qu'elles ne retournent à leur place : c'est là que tout se joue. */
-const MISS_MS = FAST ? 40 : 2_600;
-const TRIO_MS = FAST ? 40 : 2_200;
+/** Le temps de bien voir les cartes avant qu'elles ne retournent à leur place : c'est là que tout se joue (allongé le 15/11/2026, à la demande des joueurs). */
+const MISS_MS = FAST ? 40 : 4_200;
+const TRIO_MS = FAST ? 40 : 3_400;
 /** Le temps de savourer le trio gagnant avant le podium. */
 const WIN_MS = FAST ? 120 : 3_400;
 /** Un échange entre partenaires ne bloque pas la table indéfiniment : sans choix, on passe. */
@@ -325,7 +325,8 @@ export class Room {
     const now = Date.now();
     this.turnStartedAt = now;
     this.turnEndsAt = FAST ? now + 900 : this.settings.think ? now + this.settings.think * 1000 : 0;
-    this.botActAt = now + (first ? this.botDelay(1300, 900) : this.botDelay(950, 500));
+    // Entre deux cartes d'un même tour, le bot laisse le temps de regarder celle qu'il vient de retourner.
+    this.botActAt = now + (first ? this.botDelay(1500, 900) : this.botDelay(1800, 700));
   }
 
   private check(seq: unknown): string | undefined {

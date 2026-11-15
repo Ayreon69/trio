@@ -1322,10 +1322,24 @@ h3 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+/* Sur téléphone, les groupes gauche / en face / droite s'effacent : chaque place prend son rang dans l'ordre du jeu. */
+.side {
+  display: contents;
+}
+.place {
+  position: relative;
+  order: var(--order);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.place > .seat {
+  flex: 1;
+}
 /* Trois ou cinq adversaires : celui d'en face (le partenaire en équipes) prend toute la largeur, en haut. */
 @media (max-width: 759px) {
-  .seats.has-3 > .seat:nth-child(2),
-  .seats.has-5 > .seat:nth-child(3) {
+  .seats.has-3 .place.is-top,
+  .seats.has-5 .place.is-top {
     grid-column: 1 / -1;
     order: -1;
   }
@@ -1421,18 +1435,64 @@ h3 {
   filter: drop-shadow(-1.5px 0 0 var(--card)) drop-shadow(1px 1px 0 rgba(31, 27, 46, 0.35));
   margin-left: max(calc(var(--mini-w) * -0.62), min(calc(var(--mini-w) * -0.3), calc((100% - var(--mini-w)) / max(1, var(--n) - 1) - var(--mini-w))));
 }
-.fan-card.is-up {
-  position: relative;
-  z-index: 2;
-  transform: translateY(-7px) scale(1.18);
-  filter: drop-shadow(0 0 0 var(--pink)) drop-shadow(2px 2px 0 var(--ink));
-  animation: rise 0.35s cubic-bezier(0.3, 1.5, 0.5, 1);
-}
-
 @keyframes rise {
   from {
     transform: translateY(4px) scale(0.9) rotateY(90deg);
   }
+}
+
+/* Les cartes montrées ce tour-ci, posées devant leur propriétaire. Sur téléphone, elles se posent par-dessus son éventail. */
+.front {
+  --fw: calc(var(--mini-w, 27px) * 1.35);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
+}
+.front-card {
+  position: relative;
+  width: var(--fw);
+  flex: none;
+  filter: drop-shadow(2px 2px 0 var(--ink));
+  animation: rise 0.35s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.front-card > .card {
+  display: block;
+}
+.front-card.is-odd > .card,
+.slot.is-odd .flip {
+  outline: 3px solid var(--red);
+  outline-offset: 1px;
+  border-radius: 9px;
+}
+
+/* Le repère de la demande : flèche vers le bas et turquoise pour la plus petite, vers le haut et rose pour la plus grande. */
+.end-tag {
+  position: absolute;
+  left: 50%;
+  top: -9px;
+  z-index: 2;
+  translate: -50% 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 18px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  color: #fff;
+}
+.end-tag.is-low,
+.ask-btn.is-low .ask-pill {
+  background: var(--teal);
+}
+.end-tag.is-high {
+  background: var(--pink);
 }
 
 .fan-empty {
@@ -1585,14 +1645,20 @@ h3 {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 18px;
   min-height: 0;
 }
 
+/* La dernière nouvelle se pose sur le bord haut du panneau du centre, le temps de la lire. */
 .news {
-  min-height: 26px;
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -16px;
+  z-index: 2;
   display: flex;
   justify-content: center;
+  pointer-events: none;
 }
 
 .news-pill {
@@ -1666,27 +1732,27 @@ h3 {
   }
 }
 
-.meter {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+.status {
+  position: relative;
+  display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
   max-width: 560px;
-  padding: 9px 12px;
+  min-height: 64px;
+  padding: 12px 14px 10px;
   border: var(--line) solid var(--ink);
   border-radius: 18px;
   background: var(--card);
   box-shadow: var(--shadow);
-  position: relative;
 }
-.meter.is-mine {
+.status.is-mine {
   background: var(--yellow-soft);
 }
-.meter.is-miss {
+.status.is-miss {
   animation: shake 0.42s 0.15s;
 }
-.meter.is-trio {
+.status.is-trio {
   background: var(--yellow);
 }
 
@@ -1701,80 +1767,67 @@ h3 {
   }
 }
 
-.meter-slots {
-  position: relative;
+.ask-now-wrap {
+  flex: none;
   display: flex;
-  gap: 6px;
 }
-
-.meter-slot {
-  --mw: clamp(40px, 11.5vw, 58px);
-  position: relative;
-  width: var(--mw);
+.ask-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 7px;
+  border: var(--line) solid var(--ink);
+  border-radius: 12px;
+  color: #fff;
+  line-height: 1.1;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.ask-now > svg {
+  flex: none;
+}
+.ask-now > span {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  min-width: 0;
 }
-
-.meter-card {
-  width: 100%;
-  filter: drop-shadow(2px 2px 0 var(--ink));
-  animation: land 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);
-}
-.meter-card.is-landing {
-  opacity: 0;
-  animation: none;
-}
-.meter-slot.is-odd .meter-card {
-  filter: drop-shadow(0 0 0 #000) drop-shadow(2px 2px 0 var(--red));
-  outline: 3px solid var(--red);
-  outline-offset: 1px;
-  border-radius: 9px;
-}
-
-@keyframes land {
-  from {
-    transform: scale(1.25);
-  }
-}
-
-.meter-hole {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  aspect-ratio: 100 / 140;
-  border: 2px dashed rgba(31, 27, 46, 0.4);
-  border-radius: 9px;
+.ask-now b {
   font-family: var(--display);
-  font-size: 1.1rem;
-  color: rgba(31, 27, 46, 0.35);
+  font-weight: 400;
+  font-size: 0.92rem;
+  white-space: nowrap;
 }
-
-.meter-src {
-  max-width: calc(var(--mw) + 14px);
-  font-size: 0.62rem;
-  font-weight: 800;
-  line-height: 1.1;
-  text-align: center;
+.ask-now small {
+  max-width: 9em;
+  font-size: 0.74rem;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ask-now.is-low {
+  background: var(--teal);
+}
+.ask-now.is-high {
+  background: var(--pink);
+}
+.ask-now.is-middle {
+  background: var(--ink);
+}
 
-.meter-text {
+.status-text {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
-.meter-text b {
+.status-text b {
   font-family: var(--display);
   font-weight: 400;
   font-size: 1.05rem;
   line-height: 1.15;
 }
-.meter-text span {
+.status-text span {
   font-size: 0.8rem;
   line-height: 1.35;
   color: var(--ink-soft);
@@ -1784,7 +1837,7 @@ h3 {
 .stamp {
   position: absolute;
   left: 50%;
-  top: 34%;
+  top: 50%;
   z-index: 3;
   translate: -50% -50%;
   padding: 3px 12px;
@@ -1943,12 +1996,37 @@ h3 {
   font-weight: 800;
   white-space: nowrap;
 }
-.hand-tag.is-shown {
-  top: -18px;
-  bottom: auto;
-  background: var(--ink);
+.me-row {
+  position: relative;
 }
-
+/* Téléphone : la place de tes cartes montrées, entre le centre et ta main ; le panneau passe sur deux lignes plutôt que quatre. */
+@media (max-width: 999px) {
+  .me-zone {
+    margin-top: 36px;
+  }
+  .front.is-mine {
+    --fw: 36px;
+    bottom: calc(100% - 6px);
+  }
+}
+@media (max-width: 759px) {
+  .center {
+    gap: 14px;
+  }
+  .status {
+    padding: 10px 12px 8px;
+  }
+  .status.has-ask {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .status.has-ask .status-text {
+    flex-basis: 100%;
+  }
+}
+.hand-tag.is-low {
+  background: var(--teal);
+}
 .hand-empty {
   align-self: center;
   max-width: 300px;
@@ -2202,9 +2280,11 @@ h3 {
     justify-content: center;
     gap: 12px;
   }
-  .seat {
+  .place {
     flex: 1 1 0;
     max-width: 240px;
+  }
+  .seat {
     padding: 8px 10px 6px;
   }
   .seat-name {
@@ -2216,24 +2296,25 @@ h3 {
   .ask-pill {
     font-size: 0.8rem;
   }
+  /* Les cartes cachées du centre sur deux rangées, pour mieux les voir. */
   .middle {
-    --slot-w: min(70px, calc((100vw - 120px) / var(--count) - 10px));
-    grid-template-columns: repeat(var(--count), var(--slot-w));
-    gap: 10px;
+    --slot-w: min(70px, calc((100vw - 120px) / var(--per-row-2) - 12px));
+    grid-template-columns: repeat(var(--per-row-2), var(--slot-w));
+    gap: 10px 12px;
     padding: 12px 18px;
   }
   .goal-chip {
     flex: 0 1 360px;
     margin-inline: auto;
   }
-  .meter-slot {
-    --mw: 66px;
-  }
-  .meter-text b {
+  .status-text b {
     font-size: 1.25rem;
   }
-  .meter-text span {
+  .status-text span {
     font-size: 0.88rem;
+  }
+  .ask-now b {
+    font-size: 1.05rem;
   }
   .my-hand {
     --hw: clamp(60px, 7.6vw, 92px);
@@ -2245,15 +2326,158 @@ h3 {
   }
 }
 
+/*
+ * Ordinateur : les joueurs assis en cercle autour du centre. Toi en bas, le suivant à ta gauche,
+ * puis en face, puis à ta droite. Chaque carte montrée se pose à côté de la main de son propriétaire.
+ */
+@media (min-width: 1000px) {
+  .table-screen {
+    /* Ce que prennent l'en-tête, les places du haut, ta main et le panneau : le reste revient aux cartes du centre. */
+    --reserve: 560px;
+    display: grid;
+    max-width: 1500px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'head head head'
+      'top top top'
+      'left center right'
+      'me me me';
+    column-gap: 18px;
+    row-gap: 12px;
+  }
+  .table-screen.no-top {
+    --reserve: 420px;
+  }
+  .table-top {
+    grid-area: head;
+  }
+  .seats {
+    --mini-w: 30px;
+    display: contents;
+  }
+  .side {
+    display: flex;
+    min-width: 0;
+    gap: 22px;
+  }
+  .side:empty {
+    display: none;
+  }
+  .side.is-top {
+    grid-area: top;
+    justify-content: center;
+    gap: 40px;
+  }
+  .side.is-left,
+  .side.is-right {
+    flex-direction: column;
+    justify-content: center;
+  }
+  .side.is-left {
+    grid-area: left;
+    align-items: flex-end;
+  }
+  .side.is-right {
+    grid-area: right;
+    align-items: flex-start;
+  }
+  /* À trois, les deux autres sont assis de biais, vers le haut : un triangle autour de la table. */
+  .seats.has-2 .side {
+    justify-content: flex-start;
+    padding-top: 6%;
+  }
+  .center {
+    grid-area: center;
+  }
+  .me-zone {
+    grid-area: me;
+    justify-self: center;
+    max-width: 1100px;
+  }
+
+  .place {
+    order: 0;
+    flex: none;
+    max-width: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+  .place.is-right {
+    flex-direction: row-reverse;
+  }
+  .place > .seat {
+    flex: none;
+    width: 200px;
+  }
+
+  /* La place réservée aux cartes montrées : la table ne bouge pas quand elles arrivent. */
+  .front {
+    --fw: 50px;
+    position: static;
+    width: calc(var(--fw) * 2.4);
+    height: calc(var(--fw) * 1.4 + 12px);
+    justify-content: flex-start;
+    gap: 0;
+    border-radius: 12px;
+    border: 2px dashed rgba(31, 27, 46, 0.18);
+    padding: 0 0 4px 4px;
+  }
+  .place.is-right .front {
+    justify-content: flex-end;
+    padding: 0 4px 4px 0;
+  }
+  .front-card + .front-card {
+    margin-left: calc(var(--fw) * -0.3);
+  }
+  .front.has-cards {
+    border-color: transparent;
+  }
+
+  .middle {
+    --slot-w: clamp(44px, calc((100dvh - var(--reserve)) / 2.9), 84px);
+  }
+  .status {
+    max-width: 540px;
+  }
+
+  /* Ta main au centre, tes cartes montrées posées à sa droite. */
+  .me-row {
+    padding-right: 150px;
+  }
+  .front.is-mine {
+    --fw: 52px;
+    position: absolute;
+    left: auto;
+    right: 0;
+    bottom: 22px;
+  }
+  .my-hand {
+    --hw: clamp(60px, 6.2vw, 88px);
+  }
+}
+
+@media (min-width: 1000px) and (max-height: 720px) {
+  .my-hand {
+    --hw: 64px;
+    padding-bottom: 20px;
+  }
+  .table-screen {
+    --reserve: 520px;
+    row-gap: 8px;
+  }
+  .table-screen.no-top {
+    --reserve: 390px;
+  }
+}
+
 @media (min-width: 1100px) and (min-height: 820px) {
   .seats {
     --mini-w: 34px;
   }
-  .middle {
-    --slot-w: min(80px, calc((100vw - 120px) / var(--count) - 10px));
-  }
-  .meter-slot {
-    --mw: 74px;
+  .place > .seat {
+    width: 220px;
   }
 }
 

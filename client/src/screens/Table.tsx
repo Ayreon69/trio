@@ -1,13 +1,13 @@
-// La table : les mains des autres en haut, le centre et le trio en cours au milieu, ta main en grand en bas.
+// La table : les joueurs assis en cercle (ta main en bas), les cartes du centre au milieu, et chaque carte révélée posée devant son propriétaire.
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BookOpen, Bot, ChevronLeft, ChevronRight, Flag, LogOut, MoreHorizontal, Smile, Volume2, VolumeX, WifiOff } from 'lucide-react';
+import { ArrowDown, ArrowUp, BookOpen, Bot, ChevronLeft, ChevronRight, Flag, LayoutGrid, LogOut, MoreHorizontal, Smile, Volume2, VolumeX, WifiOff } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { EMOTES, TAUNTS, type End, type GameView, type PlayerView, type Reveal, type RoomView, type Source } from '../../../shared/protocol';
 import { FlipCard, TrioCard } from '../components/Card';
 import { Avatar, Button, Logo, Modal, TeamDot, teamName } from '../components/Ui';
 import { sfx } from '../lib/sound';
-import { capital, eventText, goalShort, listing, nameOf, sourceText, winners } from '../lib/text';
+import { capital, eventText, goalShort, listing, nameOf, winners } from '../lib/text';
 import { cls, reducedMotion, useTick, vibrate } from '../lib/util';
 import { leaveRoom, send, socket } from '../net';
 import { useStore, type Emote } from '../store';
@@ -31,28 +31,36 @@ function TurnTimer({ endsAt, think }: { endsAt: number; think: number }) {
   );
 }
 
-/** Les cartes révélées depuis une main : celles du bas et celles du haut, dans l'ordre où elles sont sorties. */
-function handReveals(g: GameView, id: string): { lows: Reveal[]; highs: Reveal[] } {
-  const mine = g.reveals.filter((r) => r.src.kind === 'hand' && r.src.player === id);
-  return { lows: mine.filter((r) => r.src.kind === 'hand' && r.src.end === 'low'), highs: mine.filter((r) => r.src.kind === 'hand' && r.src.end === 'high') };
+/** Les cartes révélées ce tour-ci depuis la main d'un joueur, avec leur rang dans le tour. */
+function frontReveals(g: GameView, id: string): { r: Reveal; i: number }[] {
+  return g.reveals.map((r, i) => ({ r, i })).filter(({ r }) => r.src.kind === 'hand' && r.src.player === id);
 }
 
-/** L'élément d'où sort une carte révélée : un emplacement du centre, ou le bout d'une main. */
-function sourceKey(g: GameView, index: number): string {
-  const r = g.reveals[index];
-  if (r.src.kind === 'middle') return `m:${r.src.slot}`;
-  const src = r.src;
-  const k = g.reveals.slice(0, index).filter((x) => x.src.kind === 'hand' && x.src.player === src.player && x.src.end === src.end).length;
-  return `${src.player}:${src.end}:${k}`;
+/** L'élément où se trouve une carte révélée : son emplacement au centre, ou sa place devant son propriétaire. */
+function revealSelector(r: Reveal, i: number): string {
+  return r.src.kind === 'middle' ? `[data-src="m:${r.src.slot}"]` : `[data-rev="${i}"]`;
+}
+
+/** La place d'un adversaire autour de la table, toi en bas : le suivant à ta gauche, puis on tourne jusqu'à ta droite. */
+type Pos = 'left' | 'top' | 'right';
+function seatPlan(count: number): { pos: Pos; row: number }[] {
+  // row : l'ordre d'affichage dans sa colonne (de haut en bas) ou sa rangée (de gauche à droite).
+  if (count === 1) return [{ pos: 'top', row: 0 }];
+  if (count === 2) return [{ pos: 'left', row: 0 }, { pos: 'right', row: 0 }];
+  if (count === 3) return [{ pos: 'left', row: 0 }, { pos: 'top', row: 0 }, { pos: 'right', row: 0 }];
+  if (count === 4) return [{ pos: 'left', row: 0 }, { pos: 'top', row: 0 }, { pos: 'top', row: 1 }, { pos: 'right', row: 0 }];
+  if (count === 5) return [{ pos: 'left', row: 1 }, { pos: 'left', row: 0 }, { pos: 'top', row: 0 }, { pos: 'right', row: 0 }, { pos: 'right', row: 1 }];
+  // Six : seulement pour qui regarde la partie sans y jouer.
+  return [{ pos: 'left', row: 1 }, { pos: 'left', row: 0 }, { pos: 'top', row: 0 }, { pos: 'top', row: 1 }, { pos: 'right', row: 0 }, { pos: 'right', row: 1 }];
 }
 
 /**
  * Sons, vibrations et cartes qui volent : tout se déduit de l'état reçu.
- * Les positions sont notées après chaque rendu : un trio qui quitte la table garde ainsi son point de départ.
+ * Les positions des cartes révélées sont notées après chaque rendu : un trio qui quitte la table garde ainsi son point de départ.
  */
-function useTableEffects(view: RoomView, setFlights: (f: (x: Flight[]) => Flight[]) => void, setLanding: (f: (x: Set<string>) => Set<string>) => void) {
+function useTableEffects(view: RoomView, setFlights: (f: (x: Flight[]) => Flight[]) => void) {
   const g = view.game!;
-  const rects = useRef(new Map<string, DOMRect>());
+  const rects = useRef(new Map<number, DOMRect>());
   const prev = useRef<{ reveals: Reveal[]; outcome: GameView['outcome']; turnId: string | null; seq: number; stage: string } | null>(null);
   const seenEvents = useRef(-1);
   const note = useRef<number>(0);
@@ -65,19 +73,11 @@ function useTableEffects(view: RoomView, setFlights: (f: (x: Flight[]) => Flight
     if (!before) return;
     const find = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
     const fly: Flight[] = [];
-    const land = new Set<string>();
     const motionOk = !reducedMotion();
-    // Une nouvelle carte révélée : elle se retourne sur place, et sa copie file vers la jauge du trio.
+    // Une nouvelle carte révélée : elle se retourne là où elle est, au centre ou devant son propriétaire.
     for (let i = before.reveals.length; i < g.reveals.length; i++) {
-      const r = g.reveals[i];
       window.setTimeout(() => sfx.flip(), 0);
-      if (i >= 1 && r.value === g.reveals[0].value && i === 1) window.setTimeout(() => sfx.pair(), 260);
-      const from = find(`[data-src="${sourceKey(g, i)}"]`);
-      const to = find(`[data-meter="${i}"]`);
-      if (from && to && motionOk) {
-        fly.push({ id: `r${g.seq}-${i}`, value: r.value, from, to, delay: 0 });
-        land.add(`meter:${i}`);
-      }
+      if (i === 1 && g.reveals[1].value === g.reveals[0].value) window.setTimeout(() => sfx.pair(), 260);
     }
     if (g.outcome && !before.outcome) {
       const mine = g.turnId === view.me;
@@ -87,7 +87,7 @@ function useTableEffects(view: RoomView, setFlights: (f: (x: Flight[]) => Flight
       } else {
         window.setTimeout(() => sfx.trio(), 200);
         vibrate(mine ? [30, 40, 70] : 25);
-        const m = find('.meter-slots');
+        const m = find('.status');
         if (m && motionOk)
           window.setTimeout(
             () =>
@@ -104,28 +104,20 @@ function useTableEffects(view: RoomView, setFlights: (f: (x: Flight[]) => Flight
           );
       }
     }
-    // Un trio gagné : les trois cartes filent vers les trios de leur nouveau propriétaire.
+    // Un trio gagné : les trois cartes filent de là où elles étaient posées vers les trios de leur nouveau propriétaire.
     for (const e of fresh) {
       if (e.kind !== 'trio' || !e.by || !motionOk) continue;
       const to = find(`[data-trios="${e.by}"]`);
       for (let i = 0; i < 3; i++) {
-        const from = rects.current.get(`meter:${i}`);
+        const from = rects.current.get(i);
         if (from && to) fly.push({ id: `t${e.id}-${i}`, value: e.value!, from, to: new DOMRect(to.left + to.width - 18, to.top, Math.min(to.height * 0.72, 26), Math.min(to.height, 36)), delay: i * 70 });
       }
     }
     if (fly.length) {
       setFlights((x) => [...x, ...fly]);
-      setLanding((x) => new Set([...x, ...land]));
       const end = Math.max(...fly.map((f) => f.delay)) + 480;
       const ids = new Set(fly.map((f) => f.id));
-      window.setTimeout(() => {
-        setFlights((x) => x.filter((f) => !ids.has(f.id)));
-        setLanding((x) => {
-          const next = new Set(x);
-          for (const k of land) next.delete(k);
-          return next;
-        });
-      }, end);
+      window.setTimeout(() => setFlights((x) => x.filter((f) => !ids.has(f.id))), end);
     }
     if (g.turnId === view.me && g.stage === 'play' && (before.turnId !== view.me || before.stage !== 'play') && g.reveals.length === 0) {
       sfx.turn();
@@ -137,9 +129,14 @@ function useTableEffects(view: RoomView, setFlights: (f: (x: Flight[]) => Flight
     }
   });
 
-  // Puis noter les positions actuelles pour le prochain coup.
+  // Puis noter où sont les cartes révélées pour le prochain coup.
   useLayoutEffect(() => {
-    for (const el of document.querySelectorAll<HTMLElement>('[data-meter]')) rects.current.set(`meter:${el.dataset.meter}`, el.getBoundingClientRect());
+    if (!g.reveals.length) return;
+    rects.current.clear();
+    g.reveals.forEach((r, i) => {
+      const el = document.querySelector(revealSelector(r, i));
+      if (el) rects.current.set(i, el.getBoundingClientRect());
+    });
   });
 }
 
@@ -212,96 +209,110 @@ function TrioChips({ trios, id }: { trios: number[]; id: string }) {
   );
 }
 
+/** Le repère d'une demande : flèche vers le bas pour la plus petite carte, vers le haut pour la plus grande. */
+function EndMark({ end, size = 12 }: { end: End; size?: number }) {
+  return end === 'low' ? <ArrowDown size={size} strokeWidth={3} aria-hidden /> : <ArrowUp size={size} strokeWidth={3} aria-hidden />;
+}
+
+/** Les cartes qu'un joueur a dû montrer ce tour-ci, posées devant lui, chacune avec le repère de ce qui a été demandé. */
+function Front({ view, owner, mine }: { view: RoomView; owner: string; mine?: boolean }) {
+  const g = view.game!;
+  const items = frontReveals(g, owner);
+  const links = g.mode === 'piquant';
+  const odd = g.outcome?.kind === 'miss' ? g.reveals.length - 1 : -1;
+  return (
+    <div className={cls('front', mine && 'is-mine', items.length > 0 && 'has-cards')} style={{ '--k': items.length } as CSSProperties}>
+      {items.map(({ r, i }) => {
+        const end = r.src.kind === 'hand' ? r.src.end : 'low';
+        const label = `${end === 'low' ? 'Plus petite' : 'Plus grande'} carte ${mine ? 'de ta main' : `de ${nameOf(view, owner)}`} : ${r.value}`;
+        return (
+          <span key={`${i}:${r.value}:${end}`} className={cls('front-card', i === odd && 'is-odd')} data-rev={i} role="img" aria-label={label}>
+            <span className={cls('end-tag', `is-${end}`)}>
+              <EndMark end={end} size={12} />
+            </span>
+            <TrioCard value={r.value} links={links} />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Un adversaire : son nom, ses trios, sa main face cachée, et deux grandes touches « petite » / « grande » quand c'est à toi. */
-function Seat({ view, p, canAsk, onAsk, emotes, partner }: { view: RoomView; p: PlayerView; canAsk: boolean; onAsk: (id: string, end: End) => void; emotes: Emote[]; partner: boolean }) {
+function Seat({ view, p, pos, row, order, canAsk, onAsk, emotes, partner }: { view: RoomView; p: PlayerView; pos: Pos; row: number; order: number; canAsk: boolean; onAsk: (id: string, end: End) => void; emotes: Emote[]; partner: boolean }) {
   const g = view.game!;
   const isTurn = g.turnId === p.id && g.stage !== 'over';
-  const { lows, highs } = handReveals(g, p.id);
   const count = p.hand ?? 0;
-  const ref = useRef<HTMLDivElement>(null);
-  // Quand la rangée défile, on garde en vue celui qui joue (sans faire bouger la page).
-  useEffect(() => {
-    const el = ref.current;
-    const strip = el?.parentElement;
-    if (!isTurn || !el || !strip || strip.scrollWidth <= strip.clientWidth) return;
-    strip.scrollTo({ left: el.offsetLeft - (strip.clientWidth - el.offsetWidth) / 2, behavior: reducedMotion() ? 'auto' : 'smooth' });
-  }, [isTurn]);
   const live = canAsk && count > 0;
   let status: string | null = null;
   if (p.swapping) status = 'choisit…';
   else if (isTurn) status = g.stage === 'resolve' ? null : 'joue';
   return (
-    <div ref={ref} className={cls('seat', isTurn && 'is-turn', live && 'is-live', partner && 'is-partner', p.team !== null && `is-team${p.team}`, !p.connected && 'is-off')}>
-      <div className="seat-head">
-        <span className="seat-avatar">
-          <Avatar avatar={p.avatar} />
-          <Bubbles emotes={emotes} />
-        </span>
-        <span className="seat-name">{p.name}</span>
-        <TeamDot team={p.team} />
-        <TrioChips trios={p.trios} id={p.id} />
-      </div>
-      <div className="seat-hand" style={{ '--n': count + lows.length + highs.length } as CSSProperties}>
-        <div className="fan">
-          {lows.map((r, i) => (
-            <span key={`l${i}`} className="fan-card is-up" data-src={`${p.id}:low:${i}`}>
-              <TrioCard value={r.value} mini />
-            </span>
-          ))}
-          {Array.from({ length: count }, (_, i) => (
-            <span key={`b${i}`} className="fan-card">
-              <TrioCard mini />
-            </span>
-          ))}
-          {[...highs].reverse().map((r, i) => (
-            <span key={`h${highs.length - 1 - i}`} className="fan-card is-up" data-src={`${p.id}:high:${highs.length - 1 - i}`}>
-              <TrioCard value={r.value} mini />
-            </span>
-          ))}
-          {count + lows.length + highs.length === 0 && <span className="fan-empty">plus de cartes</span>}
+    <div className={cls('place', `is-${pos}`)} style={{ '--row': row, '--order': order } as CSSProperties}>
+      <div className={cls('seat', isTurn && 'is-turn', live && 'is-live', partner && 'is-partner', p.team !== null && `is-team${p.team}`, !p.connected && 'is-off')}>
+        <div className="seat-head">
+          <span className="seat-avatar">
+            <Avatar avatar={p.avatar} />
+            <Bubbles emotes={emotes} />
+          </span>
+          <span className="seat-name">{p.name}</span>
+          <TeamDot team={p.team} />
+          <TrioChips trios={p.trios} id={p.id} />
         </div>
-      </div>
-      <div className="seat-foot">
-        {p.autopilot ? (
-          <span className="seat-auto">
-            <Bot size={11} aria-hidden /> auto
+        <div className="seat-hand" style={{ '--n': count } as CSSProperties}>
+          <div className="fan">
+            {Array.from({ length: count }, (_, i) => (
+              <span key={`b${i}`} className="fan-card">
+                <TrioCard mini />
+              </span>
+            ))}
+            {count === 0 && <span className="fan-empty">plus de cartes</span>}
+          </div>
+        </div>
+        <div className="seat-foot">
+          {p.autopilot ? (
+            <span className="seat-auto">
+              <Bot size={11} aria-hidden /> auto
+            </span>
+          ) : !p.connected ? (
+            <span className="seat-auto">
+              <WifiOff size={11} aria-hidden /> absent
+            </span>
+          ) : (
+            status && <span className={cls('seat-state', isTurn && 'is-live')}>{status}</span>
+          )}
+          {partner && <span className="seat-partner">partenaire</span>}
+          <span className="seat-count">
+            {count} carte{count > 1 ? 's' : ''}
           </span>
-        ) : !p.connected ? (
-          <span className="seat-auto">
-            <WifiOff size={11} aria-hidden /> absent
-          </span>
-        ) : (
-          status && <span className={cls('seat-state', isTurn && 'is-live')}>{status}</span>
+        </div>
+        {live && (
+          <div className="ask">
+            <button type="button" className="ask-btn is-low" onClick={() => onAsk(p.id, 'low')} aria-label={`Révéler la plus petite carte de ${p.name}`}>
+              <span className="ask-pill">
+                <ChevronLeft size={13} strokeWidth={3} aria-hidden /> petite
+              </span>
+            </button>
+            <button type="button" className="ask-btn is-high" onClick={() => onAsk(p.id, 'high')} aria-label={`Révéler la plus grande carte de ${p.name}`}>
+              <span className="ask-pill">
+                grande <ChevronRight size={13} strokeWidth={3} aria-hidden />
+              </span>
+            </button>
+          </div>
         )}
-        {partner && <span className="seat-partner">partenaire</span>}
-        <span className="seat-count">
-          {count} carte{count > 1 ? 's' : ''}
-        </span>
       </div>
-      {live && (
-        <div className="ask">
-          <button type="button" className="ask-btn is-low" onClick={() => onAsk(p.id, 'low')} aria-label={`Révéler la plus petite carte de ${p.name}`}>
-            <span className="ask-pill">
-              <ChevronLeft size={13} strokeWidth={3} aria-hidden /> petite
-            </span>
-          </button>
-          <button type="button" className="ask-btn is-high" onClick={() => onAsk(p.id, 'high')} aria-label={`Révéler la plus grande carte de ${p.name}`}>
-            <span className="ask-pill">
-              grande <ChevronRight size={13} strokeWidth={3} aria-hidden />
-            </span>
-          </button>
-        </div>
-      )}
+      <Front view={view} owner={p.id} />
     </div>
   );
 }
 
-/** Le centre : des emplacements fixes, pour qu'on se souvienne de chaque carte par sa place. */
+/** Le centre : des emplacements fixes sur deux rangées, pour qu'on se souvienne de chaque carte par sa place. */
 function Middle({ g, canPick, links, onPick }: { g: GameView; canPick: boolean; links: boolean; onPick: (slot: number) => void }) {
   const n = g.middle.length;
-  const perRow = n <= 6 ? n : Math.ceil(n / 2);
+  const odd = g.outcome?.kind === 'miss' ? g.reveals[g.reveals.length - 1]?.src : undefined;
+  const oddSlot = odd?.kind === 'middle' ? odd.slot : -1;
   return (
-    <div className="middle" style={{ '--per-row': perRow, '--count': n } as CSSProperties} aria-label="Les cartes du centre">
+    <div className="middle" style={{ '--per-row': n <= 6 ? n : Math.ceil(n / 2), '--per-row-2': n <= 3 ? n : Math.ceil(n / 2) } as CSSProperties} aria-label="Les cartes du centre">
       {g.middle.map((s, i) =>
         s === null ? (
           <span key={i} className="slot is-gone" aria-hidden />
@@ -309,7 +320,7 @@ function Middle({ g, canPick, links, onPick }: { g: GameView; canPick: boolean; 
           <button
             key={i}
             type="button"
-            className={cls('slot', canPick && s === 'hidden' && 'is-live', s !== 'hidden' && 'is-up')}
+            className={cls('slot', canPick && s === 'hidden' && 'is-live', s !== 'hidden' && 'is-up', i === oddSlot && 'is-odd')}
             disabled={!canPick || s !== 'hidden'}
             onClick={() => onPick(i)}
             data-src={`m:${i}`}
@@ -323,8 +334,8 @@ function Middle({ g, canPick, links, onPick }: { g: GameView; canPick: boolean; 
   );
 }
 
-/** Ce que dit la jauge : où en est le trio, et quoi faire. */
-function meterText(view: RoomView): { title: string; sub: string | null } {
+/** Ce que dit le panneau du centre : où en est le trio, et quoi faire. */
+function statusText(view: RoomView): { title: string; sub: string | null } {
   const g = view.game!;
   const n = g.reveals.length;
   const v = g.reveals[0]?.value;
@@ -357,45 +368,56 @@ function meterText(view: RoomView): { title: string; sub: string | null } {
   return { title: `${who} a deux ${v}…`, sub: 'Encore un pour le trio !' };
 }
 
-/** La jauge du trio en cours : trois cases qui se remplissent, au centre de la table. */
-function Meter({ view, landing }: { view: RoomView; landing: Set<string> }) {
-  const g = view.game!;
-  const t = meterText(view);
-  const links = g.mode === 'piquant';
-  const out = g.outcome;
+/** La demande en cours, en grand : la plus petite ou la plus grande carte de qui, ou une carte du centre. Rien d'autre (pas d'historique). */
+function AskNow({ view, src }: { view: RoomView; src: Source }) {
+  if (src.kind === 'middle')
+    return (
+      <span className="ask-now is-middle">
+        <LayoutGrid size={18} strokeWidth={2.6} aria-hidden />
+        <span>
+          <b>une carte</b>
+          <small>du centre</small>
+        </span>
+      </span>
+    );
+  const me = src.player === view.me;
   return (
-    <div className={cls('meter', out && `is-${out.kind}`, g.turnId === view.me && g.stage === 'play' && 'is-mine')} role="status" aria-live="polite">
-      <div className="meter-slots">
-        {[0, 1, 2].map((i) => {
-          const r = g.reveals[i];
-          const odd = !!r && out?.kind === 'miss' && i === g.reveals.length - 1;
-          return (
-            <div key={i} className={cls('meter-slot', r ? 'is-filled' : 'is-empty', odd && 'is-odd')} data-meter={i}>
-              {r ? (
-                <>
-                  <span className={cls('meter-card', landing.has(`meter:${i}`) && 'is-landing')}>
-                    <TrioCard value={r.value} links={links} />
-                  </span>
-                  <span className="meter-src">{sourceText(view, r.src)}</span>
-                </>
-              ) : (
-                <span className="meter-hole">?</span>
-              )}
-            </div>
-          );
-        })}
-        <AnimatePresence>
-          {out && (
-            <motion.span key={out.kind} className={cls('stamp', `is-${out.kind}`)} initial={{ scale: 2.2, opacity: 0, rotate: -18 }} animate={{ scale: 1, opacity: 1, rotate: -10 }} exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.15 } }} transition={{ type: 'spring', stiffness: 380, damping: 18, delay: 0.25 }}>
-              {out.kind === 'miss' ? 'Raté' : 'Trio !'}
-            </motion.span>
-          )}
-        </AnimatePresence>
-      </div>
-      <div className="meter-text">
+    <span className={cls('ask-now', `is-${src.end}`)}>
+      <EndMark end={src.end} size={20} />
+      <span>
+        <b>{me ? 'ta ' : 'la '}plus {src.end === 'low' ? 'petite' : 'grande'}</b>
+        {!me && <small>de {nameOf(view, src.player)}</small>}
+      </span>
+    </span>
+  );
+}
+
+/** Le panneau du centre : la demande en cours, où en est le trio, et le chrono. */
+function Status({ view, now }: { view: RoomView; now: number }) {
+  const g = view.game!;
+  const t = statusText(view);
+  const out = g.outcome;
+  const last = g.stage === 'play' || g.stage === 'resolve' ? g.reveals[g.reveals.length - 1] : undefined;
+  return (
+    <div className={cls('status', out && `is-${out.kind}`, g.turnId === view.me && g.stage === 'play' && 'is-mine', last && 'has-ask')} role="status" aria-live="polite">
+      <News view={view} now={now} />
+      {/* Une nouvelle demande remplace la précédente d'un coup : rien ne reste de la demande d'avant. */}
+      {last && (
+        <motion.span key={g.reveals.length} className="ask-now-wrap" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 420, damping: 22 }}>
+          <AskNow view={view} src={last.src} />
+        </motion.span>
+      )}
+      <div className="status-text">
         <b>{t.title}</b>
         {t.sub && <span>{t.sub}</span>}
       </div>
+      <AnimatePresence>
+        {out && (
+          <motion.span key={out.kind} className={cls('stamp', `is-${out.kind}`)} initial={{ scale: 2.2, opacity: 0, rotate: -18 }} animate={{ scale: 1, opacity: 1, rotate: -10 }} exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.15 } }} transition={{ type: 'spring', stiffness: 380, damping: 18, delay: 0.25 }}>
+            {out.kind === 'miss' ? 'Raté' : 'Trio !'}
+          </motion.span>
+        )}
+      </AnimatePresence>
       {g.stage === 'play' && <TurnTimer endsAt={g.turnEndsAt} think={view.settings.think} />}
     </div>
   );
@@ -422,32 +444,24 @@ function News({ view, now }: { view: RoomView; now: number }) {
 interface HandCard {
   key: string;
   value: number;
-  up: boolean;
   end: End | null;
-  src: string | null;
 }
 
-/** Ta main entière, dans l'ordre : les cartes révélées ce tour-ci restent à leur place, levées et visibles de tous. */
-function handCards(g: GameView, me: string): HandCard[] {
-  const { lows, highs } = handReveals(g, me);
+/** Ta main, dans l'ordre. Les cartes que tu as dû montrer ce tour-ci n'y sont plus : elles sont posées devant toi. */
+function handCards(g: GameView): HandCard[] {
   const hand = g.hand ?? [];
-  const list: Omit<HandCard, 'key'>[] = [
-    ...lows.map((r, i) => ({ value: r.value, up: true, end: null, src: `${me}:low:${i}` })),
-    ...hand.map((v, i) => ({ value: v, up: false, end: (i === 0 ? 'low' : i === hand.length - 1 ? 'high' : null) as End | null, src: null })),
-    ...[...highs].reverse().map((r, i) => ({ value: r.value, up: true, end: null, src: `${me}:high:${highs.length - 1 - i}` })),
-  ];
   const seen = new Map<number, number>();
-  return list.map((c) => {
-    const k = seen.get(c.value) ?? 0;
-    seen.set(c.value, k + 1);
-    return { ...c, key: `${c.value}#${k}` };
+  return hand.map((v, i) => {
+    const k = seen.get(v) ?? 0;
+    seen.set(v, k + 1);
+    return { value: v, end: i === 0 ? 'low' : i === hand.length - 1 ? 'high' : null, key: v + '#' + k };
   });
 }
 
 /** Ta main : en jeu, ses deux bouts se touchent ; pendant un échange, chaque carte se choisit. */
 function MyHand({ view, canReveal, choosing, gift, got, links, onEnd, onGift }: { view: RoomView; canReveal: boolean; choosing: boolean; gift: number | null; got: number | null; links: boolean; onEnd: (end: End) => void; onGift: (v: number) => void }) {
   const g = view.game!;
-  const cards = handCards(g, view.me);
+  const cards = handCards(g);
   const hand = g.hand ?? [];
   const single = hand.length === 1;
   let gotShown = false;
@@ -457,17 +471,17 @@ function MyHand({ view, canReveal, choosing, gift, got, links, onEnd, onGift }: 
       <AnimatePresence initial={false} mode="popLayout">
         {cards.map((c) => {
           const liveEnd = canReveal && c.end !== null;
-          const isGot = got !== null && c.value === got && !gotShown && !c.up;
+          const isGot = got !== null && c.value === got && !gotShown;
           if (isGot) gotShown = true;
-          const selected = choosing && gift === c.value && !c.up;
-          const clickable = liveEnd || (choosing && !c.up);
+          const selected = choosing && gift === c.value;
+          const clickable = liveEnd || choosing;
           const label = liveEnd ? (single ? 'Révéler ta dernière carte' : c.end === 'low' ? `Révéler ta plus petite carte (${c.value})` : `Révéler ta plus grande carte (${c.value})`) : choosing ? `Donner ton ${c.value}` : `Ton ${c.value}`;
           return (
             <motion.button
               key={c.key}
               layout
               type="button"
-              className={cls('hand-card', c.up && 'is-up', liveEnd && 'is-live', selected && 'is-selected', isGot && 'is-got')}
+              className={cls('hand-card', liveEnd && 'is-live', selected && 'is-selected', isGot && 'is-got')}
               disabled={!clickable}
               initial={{ y: 30, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -475,13 +489,11 @@ function MyHand({ view, canReveal, choosing, gift, got, links, onEnd, onGift }: 
               transition={{ type: 'spring', stiffness: 420, damping: 32 }}
               onClick={() => (choosing ? onGift(c.value) : c.end && onEnd(single ? 'low' : c.end))}
               aria-label={label}
-              data-src={c.src ?? undefined}
             >
               {/* framer-motion pilote le transform du bouton : le soulèvement se fait sur l'enveloppe intérieure. */}
               <span className="hand-lift">
                 <TrioCard value={c.value} links={links} />
-                {liveEnd && <span className="hand-tag">{single ? 'la seule' : c.end === 'low' ? 'ta petite' : 'ta grande'}</span>}
-                {c.up && <span className="hand-tag is-shown">montrée</span>}
+                {liveEnd && <span className={cls('hand-tag', !single && c.end === 'low' && 'is-low')}>{single ? 'la seule' : c.end === 'low' ? 'ta petite' : 'ta grande'}</span>}
               </span>
             </motion.button>
           );
@@ -502,10 +514,9 @@ export function Table({ view }: { view: RoomView }) {
   const [busy, setBusy] = useState(false);
   const [gift, setGift] = useState<number | null>(null);
   const [flights, setFlights] = useState<Flight[]>([]);
-  const [landing, setLanding] = useState<Set<string>>(() => new Set());
   const now = useTick(300);
   const g = view.game!;
-  useTableEffects(view, setFlights, setLanding);
+  useTableEffects(view, setFlights);
 
   const me = view.players.find((p) => p.id === view.me);
   const seated = g.order.includes(view.me);
@@ -517,6 +528,7 @@ export function Table({ view }: { view: RoomView }) {
   // On tourne la table : d'abord celui qui joue juste après toi.
   const start = seated ? g.order.indexOf(view.me) + 1 : 0;
   const others = Array.from({ length: seated ? n - 1 : n }, (_, i) => view.players.find((p) => p.id === g.order[(start + i) % n])!).filter(Boolean);
+  const plan = seatPlan(others.length);
   const partner = g.teams?.find((t) => t.includes(view.me))?.find((x) => x !== view.me) ?? null;
   const choosing = seated && g.stage === 'swap' && !!g.swap?.waiting.includes(view.me);
 
@@ -543,7 +555,7 @@ export function Table({ view }: { view: RoomView }) {
   const teamTrios = partner ? [...myTrios, ...(view.players.find((p) => p.id === partner)?.trios ?? [])] : myTrios;
 
   return (
-    <div className={cls('table-screen', `is-${n}p`, myTurn && 'is-my-turn', g.middle.length === 0 && 'no-middle', g.stage === 'swap' && 'is-swap')}>
+    <div className={cls('table-screen', `is-${n}p`, myTurn && 'is-my-turn', g.middle.length === 0 && 'no-middle', !plan.some((x) => x.pos === 'top') && 'no-top', g.stage === 'swap' && 'is-swap')}>
       <div className="table-bg" aria-hidden />
       <header className="table-top">
         <span className="table-logo">
@@ -564,16 +576,24 @@ export function Table({ view }: { view: RoomView }) {
         {react && <ReactionTray onClose={() => setReact(false)} />}
       </header>
 
+      {/* Sur grand écran, trois groupes autour du centre (gauche, en face, droite) ; sur téléphone, une simple grille dans l'ordre du jeu. */}
       <section className={cls('seats', `has-${others.length}`)} aria-label="Les autres joueurs">
-        {others.map((o) => (
-          <Seat key={o.id} view={view} p={o} canAsk={canAct} onAsk={(player, end) => reveal({ kind: 'hand', player, end })} emotes={emotes.filter((e) => e.playerId === o.id)} partner={o.id === partner} />
+        {(['left', 'top', 'right'] as const).map((side) => (
+          <div key={side} className={cls('side', `is-${side}`)}>
+            {others
+              .map((o, k) => ({ o, k, ...plan[k] }))
+              .filter((x) => x.pos === side)
+              .sort((a, b) => a.row - b.row)
+              .map(({ o, k, pos, row }) => (
+                <Seat key={o.id} view={view} p={o} pos={pos} row={row} order={k} canAsk={canAct} onAsk={(player, end) => reveal({ kind: 'hand', player, end })} emotes={emotes.filter((e) => e.playerId === o.id)} partner={o.id === partner} />
+              ))}
+          </div>
         ))}
       </section>
 
       <section className="center">
-        <News view={view} now={now} />
         {g.middle.length > 0 && <Middle g={g} canPick={canAct} links={links} onPick={(slot) => reveal({ kind: 'middle', slot })} />}
-        <Meter view={view} landing={landing} />
+        <Status view={view} now={now} />
       </section>
 
       <section className={cls('me-zone', myTurn && 'is-turn', choosing && 'is-choosing')}>
@@ -602,19 +622,22 @@ export function Table({ view }: { view: RoomView }) {
                 </Button>
               </div>
             )}
-            <MyHand
-              view={view}
-              canReveal={canAct && (g.hand?.length ?? 0) > 0}
-              choosing={choosing}
-              gift={gift}
-              got={note?.got ?? null}
-              links={links}
-              onEnd={(end) => reveal({ kind: 'hand', player: view.me, end })}
-              onGift={(v) => {
-                sfx.tap();
-                setGift((x) => (x === v ? null : v));
-              }}
-            />
+            <div className="me-row">
+              <Front view={view} owner={view.me} mine />
+              <MyHand
+                view={view}
+                canReveal={canAct && (g.hand?.length ?? 0) > 0}
+                choosing={choosing}
+                gift={gift}
+                got={note?.got ?? null}
+                links={links}
+                onEnd={(end) => reveal({ kind: 'hand', player: view.me, end })}
+                onGift={(v) => {
+                  sfx.tap();
+                  setGift((x) => (x === v ? null : v));
+                }}
+              />
+            </div>
             <div className="me-foot">
               <span className="me-avatar">
                 <Avatar avatar={me.avatar} />
